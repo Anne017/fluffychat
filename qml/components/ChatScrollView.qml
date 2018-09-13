@@ -141,7 +141,7 @@ ListView {
 
 
     width: parent.width
-    height: parent.height - 2 * chatInput.height
+    height: parent.height - 2 * chatInput.height - stickerInput.height
     anchors.bottom: chatInput.top
     verticalLayoutDirection: ListView.BottomToTop
     delegate: ChatEvent {}

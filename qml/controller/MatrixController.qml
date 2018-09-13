@@ -94,8 +94,9 @@ Item {
     // was an error with the connection.
     function sendMessage ( messageID, data, chat_id, callback ) {
         console.log("try now ...",messageID)
-        if ( !Connectivity.online ) return console.log ("Offline!!!!!1111")
-        matrix.put( "/client/r0/rooms/" + chat_id + "/send/m.room.message/" + messageID, data, function ( response ) {
+        if ( !Connectivity.online ) return
+        var msgtype = data.msgype === "m.text" ? "m.room.message" : data.msgype
+        matrix.put( "/client/r0/rooms/" + chat_id + "/send/" + msgtype + "/" + messageID, data, function ( response ) {
             storage.transaction ( "SELECT * FROM Events WHERE id='" + response.event_id + "'", function ( res ) {
                 if ( res.rows.length > 0 ) {
                     storage.transaction ( "DELETE FROM Events WHERE id='" + messageID + "'", callback )

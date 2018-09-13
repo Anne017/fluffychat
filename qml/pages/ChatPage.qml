@@ -16,9 +16,9 @@ Page {
     property var pageName: "chat"
     property var canSendMessages: true
 
-    function send () {
-        if ( sending || messageTextField.displayText === "" ) return
-
+    function send ( sticker ) {
+        // Check if there is something to send
+        if ( (sending || messageTextField.displayText === "") && sticker === undefined ) return
 
         // Send the message
         var messageID = "%" + new Date().getTime();
@@ -27,6 +27,17 @@ Page {
             msgtype: "m.text",
             body: messageTextField.displayText
         }
+        if ( sticker ) {
+            data.body = sticker.name
+            data.msgtype = "m.sticker"
+            data.url = sticker.mxc
+            data.info = {
+                "mimetype": "image/png",
+                "thumbnail_url": sticker.thumbnail,
+            }
+        }
+        var content = JSON.stringify(data)
+        console.log(content)
 
         // Save the message in the database
         storage.query ( "INSERT OR REPLACE INTO Events VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -36,19 +47,19 @@ Page {
         matrix.matrixid,
         messageTextField.displayText,
         null,
-        "m.room.message",
-        JSON.stringify(data),
+        data.msgtype,
+        content,
         msg_status.SENDING ], function ( rs ) {
             // Send the message
             var fakeEvent = {
-                type: "m.room.message",
+                type: data.msgtype,
                 sender: matrix.matrixid,
-                content_body: messageTextField.displayText,
+                content_body: data.body,
                 displayname: settings.displayname,
                 avatar_url: settings.avatar_url,
                 status: msg_status.SENDING,
                 origin_server_ts: now,
-                content: {}
+                content: content
             }
             chatScrollView.addEventToList ( fakeEvent )
 
@@ -65,7 +76,7 @@ Page {
 
 
     function sendAttachement ( mediaUrl ) {
-            visible: false
+        visible: false
 
         // Start the upload
         matrix.upload ( mediaUrl, function ( response ) {
@@ -182,11 +193,17 @@ Page {
 
     header: FcPageHeader {
         id: header
-        title: (activeChatDisplayName || i18n.tr("Unknown chat")) + (activeChatTypingUsers.length > 0 ? "\n" + usernames.getTypingDisplayString( activeChatTypingUsers, activeChatDisplayName ) : "")
+        title: ( activeChatDisplayName || i18n.tr("Unknown chat")) + (activeChatTypingUsers.length > 0 ? "\n" + usernames.getTypingDisplayString( activeChatTypingUsers, activeChatDisplayName ) : "")
 
         trailingActionBar {
-            numberOfSlots: 1
+            numberOfSlots: 2
             actions: [
+            Action {
+                iconName: "insert-image"
+                text: i18n.tr("Send sticker")
+                visible: membership === "join"
+                onTriggered: stickerInput.visible ? stickerInput.hide() : stickerInput.show()
+            },
             Action {
                 iconName: "edit-delete"
                 text: i18n.tr("Remove")
@@ -292,27 +309,27 @@ Page {
         color: theme.palette.normal.background
         anchors {
             horizontalCenter: parent.horizontalCenter
-            bottom: parent.bottom
+            bottom: stickerInput.top
             bottomMargin: -border.width
             leftMargin: -border.width
             rightMargin: -border.width
         }
 
 
-            Button {
-                id: joinButton
-                color: UbuntuColors.green
-                text: membership === "invite" ? i18n.tr("Accept invitation") : i18n.tr("Join")
-                anchors.centerIn: parent
-                visible: membership !== "join"
-                onClicked: {
-                    loadingScreen.visible = true
-                    matrix.post("/client/r0/join/" + encodeURIComponent(activeChat), null, function () {
-                        events.waitForSync ()
-                        membership = "join"
-                    })
-                }
+        Button {
+            id: joinButton
+            color: UbuntuColors.green
+            text: membership === "invite" ? i18n.tr("Accept invitation") : i18n.tr("Join")
+            anchors.centerIn: parent
+            visible: membership !== "join"
+            onClicked: {
+                loadingScreen.visible = true
+                matrix.post("/client/r0/join/" + encodeURIComponent(activeChat), null, function () {
+                    events.waitForSync ()
+                    membership = "join"
+                })
             }
+        }
 
 
         Label {
@@ -369,7 +386,10 @@ Page {
             Keys.onReturnPressed: sendButton.trigger ()
             // If the user leaves the focus of the textfield: Send that he is no
             // longer typing.
-            onActiveFocusChanged: if ( !activeFocus ) sendTypingNotification ( activeFocus )
+            onActiveFocusChanged: {
+                if ( !activeFocus ) sendTypingNotification ( activeFocus )
+                else stickerInput.hide()
+            }
             onDisplayTextChanged: {
                 // A message must not start with white space
                 if ( displayText === " " ) text = ""
@@ -400,6 +420,58 @@ Page {
                 enabled: !sending
             }
             ]
+        }
+    }
+
+    Rectangle {
+        id: stickerInput
+        height: 0
+        visible: height !== 0
+        width: parent.width + 2
+        property var desiredHeight: 3 * header.height
+        border.width: 1
+        border.color: UbuntuColors.silk
+        color: theme.palette.normal.background
+        anchors.bottom: parent.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+
+        function show() {
+            messageTextField.focus = false
+            height = desiredHeight
+        }
+        function hide() { height = 0 }
+
+        ListView {
+            id: grid
+            anchors.fill: parent
+            orientation: ListView.Horizontal
+            delegate: Rectangle {
+                id: delegate
+                width: grid.height
+                height: grid.height
+                Image {
+                    id: image
+                    anchors.fill: delegate
+                    source: "../../assets/sticker/%1.png".arg(name)
+                    fillMode: Image.PreserveAspectFit
+                }
+                MouseArea {
+                    anchors.fill: image
+                    onClicked: send ( { name: name, mxc: mxc, thumbnail: thumbnail } )
+                }
+            }
+            model: ListModel {
+                ListElement {
+                    name: "sticker1"
+                    mxc: "mxc://chat.regionetz.net/DWLXZaCGKbBYlqUSrnFsUfHQ"
+                    thumbnail: "mxc://chat.regionetz.net/FvVNFTpnabTwDoxMlwNliLnq"
+                }
+                ListElement {
+                    name: "sticker2"
+                    mxc: "mxc://chat.regionetz.net/fXkuGoxyWIQmaPLyzCXrXgcp"
+                    thumbnail: "mxc://chat.regionetz.net/awNZFNiscgyyoytMMoZzWurL"
+                }
+            }
         }
     }
 
